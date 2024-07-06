@@ -8,6 +8,7 @@ import (
 	"di_container/internal/interceptor"
 	"di_container/internal/logger"
 	"di_container/internal/metric"
+	"di_container/internal/rate_limiter"
 	"di_container/internal/tracing"
 	descAccess "di_container/pkg/access_v1"
 	descAuth "di_container/pkg/auth_v1"
@@ -25,6 +26,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"time"
 
 	"log"
 
@@ -186,10 +188,13 @@ func (a *App) initGRPCServer(ctx context.Context) error {
 
 	otherServiceClient := otherService.New(descOther.NewOtherNoteV1Client(conn))
 
+	rateLimiter := rate_limiter.NewTokenBucketLimiter(ctx, 10, time.Second)
+
 	a.grpcServer = grpc.NewServer(
 		grpc.Creds(insecure.NewCredentials()),
 		grpc.UnaryInterceptor(
 			grpcMiddleware.ChainUnaryServer(
+				interceptor.NewRateLimiterInterceptor(rateLimiter).Unary,
 				interceptor.LogInterceptor,
 				interceptor.ValidateInterceptor,
 				interceptor.MetricsInterceptor,
