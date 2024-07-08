@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	otherService "di_container/internal/client/rpc/other_service"
 	"di_container/internal/closer"
 	"di_container/internal/config"
 	"di_container/internal/interceptor"
@@ -13,11 +12,7 @@ import (
 	descAccess "di_container/pkg/access_v1"
 	descAuth "di_container/pkg/auth_v1"
 	desc "di_container/pkg/note_v1"
-	descOther "di_container/pkg/other_note_v1"
 	"flag"
-	"fmt"
-	"github.com/grpc-ecosystem/grpc-opentracing/go/otgrpc"
-	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sony/gobreaker"
 	"go.uber.org/zap"
@@ -178,16 +173,16 @@ func (a *App) initGRPCServer(ctx context.Context) error {
 	//	log.Fatalf("Failed to load TLS keys: %s", err)
 	//}
 
-	conn, err := grpc.Dial(
-		fmt.Sprintf(":%d", a.serviceProvider.GRPCConfig().OtherPort()),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithUnaryInterceptor(otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer())),
-	)
-	if err != nil {
-		log.Fatalf("failed to dial GRPC client: %v", err)
-	}
+	//conn, err := grpc.Dial(
+	//	fmt.Sprintf(":%d", a.serviceProvider.GRPCConfig().OtherPort()),
+	//	grpc.WithTransportCredentials(insecure.NewCredentials()),
+	//	grpc.WithUnaryInterceptor(otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer())),
+	//)
+	//if err != nil {
+	//	log.Fatalf("failed to dial GRPC client: %v", err)
+	//}
 
-	otherServiceClient := otherService.New(descOther.NewOtherNoteV1Client(conn))
+	//otherServiceClient := otherService.New(descOther.NewOtherNoteV1Client(conn))
 
 	rateLimiter := rate_limiter.NewTokenBucketLimiter(ctx, 10, time.Second)
 
@@ -208,19 +203,20 @@ func (a *App) initGRPCServer(ctx context.Context) error {
 		grpc.Creds(insecure.NewCredentials()),
 		grpc.UnaryInterceptor(
 			grpcMiddleware.ChainUnaryServer(
-				interceptor.NewCircuitBreakerInterceptor(cb).Unary,
+				interceptor.ErrorCodesInterceptor,
 				interceptor.NewRateLimiterInterceptor(rateLimiter).Unary,
+				interceptor.NewCircuitBreakerInterceptor(cb).Unary,
 				interceptor.LogInterceptor,
 				interceptor.ValidateInterceptor,
 				interceptor.MetricsInterceptor,
-				interceptor.ServerTracingInterceptor,
+				//interceptor.ServerTracingInterceptor,
 			),
 		),
 	)
 
 	reflection.Register(a.grpcServer)
 
-	desc.RegisterNoteV1Server(a.grpcServer, a.serviceProvider.GetNoteImpl(ctx, otherServiceClient))
+	desc.RegisterNoteV1Server(a.grpcServer, a.serviceProvider.GetNoteImpl(ctx))
 	descAuth.RegisterAuthV1Server(a.grpcServer, a.serviceProvider.GetAuthImpl())
 	descAccess.RegisterAccessV1Server(a.grpcServer, a.serviceProvider.GetAccessImpl())
 
